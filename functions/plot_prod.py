@@ -20,27 +20,47 @@ def plot_prod(country='de',
     s = requests.Session()
     
     if not (country == 'de' and int(year) < 2019):
+        
         url = f'https://energy-charts.info/charts/energy/data/{country}/{step}_{year}.json'
+        
+        r = s.get(url)
+    
+        s.close()
+    
+        response = json.loads(r.text)
+        
+        try:
+            techs = [r['name'][0][lang] for r in response]
+        except KeyError:
+            techs = [r['name'][lang] for r in response]
+        
+        prod  = [r['data'] for r in response]
+        ticks = [datetime.strptime(d, '%d.%m.%Y') for d in response[0]['xAxisValues']]
+        
+        colors = {t:tuple(c/255 for c in make_tuple(r['color'][3:])) for r,t in zip(response,techs)}
+        colors = {**colors, **{'_'+k:v for k,v in colors.items()}}
+        load_dict = {'en': 'Load', 'de': 'Last', 'fr': 'Charge', 'it': 'Carico'}
+        
     else:
+        
         url = f'https://energy-charts.info/charts/energy/raw_data/{country}/{step}_{year}.json'
+        
+        r = s.get(url)
+    
+        s.close()
+    
+        response = json.loads(r.text)
+        
+        techs = [r['key'][0][lang] for r in response]
+        prod  = [[v[1] for v in r['values']] for r in response]
+        ticks = [[datetime.strptime(v[0], '%d.%m.%Y') for v in r['values']] for r in response][0]
+        
+        colors = {t:tuple(c/255 for c in make_tuple(r['color'][3:])) for r,t in zip(response,techs)}
+        colors = {**colors, **{'_'+k:v for k,v in colors.items()}}
+        load_dict = {'en': 'Load', 'de': 'Last', 'fr': 'Charge', 'it': 'Carico'}
+        
     print(url)
-    r = s.get(url)
-    
-    s.close()
-    
-    response = json.loads(r.text)
-    
-    try:
-        techs = [r['name'][0][lang] for r in response]
-    except KeyError:
-        techs = [r['name'][lang] for r in response]
-    
-    prod  = [r['data'] for r in response]
-    ticks = [datetime.strptime(d, '%d.%m.%Y') for d in response[0]['xAxisValues']]
-    colors = {t:tuple(c/255 for c in make_tuple(r['color'][3:])) for r,t in zip(response,techs)}
-    colors = {**colors, **{'_'+k:v for k,v in colors.items()}}
-    load_dict = {'en': 'Load', 'de': 'Last', 'fr': 'Charge', 'it': 'Carico'}
-    
+
     prod_df = pd.DataFrame(data=prod,
                       index=techs,
                       columns=ticks).T
@@ -70,12 +90,15 @@ def plot_prod(country='de',
             load_plt = load_df.plot(ax=ax,
                          linewidth=2,
                          color=colors[load_dict[lang]])
-            handles, labels = ax.get_legend_handles_labels()
             
-            plt.legend(handles=handles, loc='upper center')
+        handles, labels = ax.get_legend_handles_labels()
+
+        plt.legend(handles=handles,
+                   loc='center left',
+                   bbox_to_anchor=(1, 0.5))
 
         # rescale the y axis
         ax.set_ylim([df_neg.sum(axis=1).min()*1.1, df_pos.sum(axis=1).max()*1.1])
         
         
-    return prod_df, load_df
+    return prod_df, load_df, colors
