@@ -20,6 +20,10 @@ def get_trade(country='de',
     
     s.close()
     
+    if r.status_code == 404:
+        print('File not found!')
+        return None, None
+    
     response = json.loads(r.text)
     
     ticks = [datetime.utcfromtimestamp(d/1000) for d in response[0]['xAxisValues']]
@@ -33,6 +37,8 @@ def get_trade(country='de',
         
     colors = {t:tuple(c/255 for c in make_tuple(r['color'][3:])) for r,t in zip(response,regions)}
     colors = {**colors, **{'_'+k:v for k,v in colors.items()}}
+    
+    print(url)
     
     trade_df = pd.DataFrame(data=trade,
                       index=regions,
@@ -78,58 +84,68 @@ def get_prod(country='de',
     
     s = requests.Session()
     
-    if not (country == 'de' and int(year) < 2019):
+#     if not (country == 'de' and int(year) < 2019):
         
-        url = f'https://energy-charts.info/charts/energy/data/{country}/{step}_{year}.json'
-        
-        if step == 'hour':
-            url = f'https://energy-charts.info/charts/power/data/{country}/year_{year}.json'
-        
-        r = s.get(url)
+    url = f'https://energy-charts.info/charts/energy/data/{country}/{step}_{year}.json'
+
+    if step == 'hour':
+        url = f'https://energy-charts.info/charts/power/data/{country}/year_{year}.json'
+
+    r = s.get(url)
+
+    s.close()
     
-        s.close()
+    if r.status_code == 404:
+        print('File not found!')
+        return None, None, None
     
-        response = json.loads(r.text)
-        
-        try:
-            techs = [r['name'][0][lang] for r in response]
-        except KeyError:
-            techs = [r['name'][lang] for r in response]
-        
-        prod  = [r['data'] for r in response]
-        
-        if step != 'hour':
-            ticks = [datetime.strptime(d, '%d.%m.%Y') for d in response[0]['xAxisValues']]
-        else:
-            ticks = [pd.to_datetime(d, unit='ms', origin='unix') for d in response[0]['xAxisValues']]
-        
-        colors = {t:tuple(c/255 for c in make_tuple(r['color'][3:])) for r,t in zip(response,techs)}
-        colors = {**colors, **{'_'+k:v for k,v in colors.items()}}
-        load_dict = {'en': 'Load', 'de': 'Last', 'fr': 'Charge', 'it': 'Carico'}
-        
+    response = json.loads(r.text)
+
+    try:
+        techs = [r['name'][0][lang] for r in response]
+    except KeyError:
+        techs = [r['name'][lang] for r in response]
+
+    prod  = [r['data'] for r in response]
+
+    if step != 'hour':
+        ticks = [datetime.strptime(d, '%d.%m.%Y') for d in response[0]['xAxisValues']]
     else:
+        ticks = [pd.to_datetime(d, unit='ms', origin='unix') for d in response[0]['xAxisValues']]
+
+    colors = {t:tuple(c/255 for c in make_tuple(r['color'][3:])) for r,t in zip(response,techs)}
+    colors = {**colors, **{'_'+k:v for k,v in colors.items()}}
+    load_dict = {'en': 'Load', 'de': 'Last', 'fr': 'Charge', 'it': 'Carico'}
         
-        url = f'https://energy-charts.info/charts/energy/raw_data/{country}/{step}_{year}.json'
+#     else:
         
-        r = s.get(url)
+#         url = f'https://energy-charts.info/charts/energy/raw_data/{country}/{step}_{year}.json'
+        
+#         r = s.get(url)
     
-        s.close()
+#         s.close()
     
-        response = json.loads(r.text)
+#         response = json.loads(r.text)
         
-        techs = [r['key'][0][lang] for r in response]
-        prod  = [[v[1] for v in r['values']] for r in response]
-        ticks = [[datetime.strptime(v[0], '%d.%m.%Y') for v in r['values']] for r in response][0]
+#         techs = [r['key'][0][lang] for r in response]
+#         prod  = [[v[1] for v in r['values']] for r in response]
+#         ticks = [[datetime.strptime(v[0], '%d.%m.%Y') for v in r['values']] for r in response][0]
         
-        colors = {t:tuple(c/255 for c in make_tuple(r['color'][3:])) for r,t in zip(response,techs)}
-        colors = {**colors, **{'_'+k:v for k,v in colors.items()}}
-        load_dict = {'en': 'Load', 'de': 'Last', 'fr': 'Charge', 'it': 'Carico'}
+#         colors = {t:tuple(c/255 for c in make_tuple(r['color'][3:])) for r,t in zip(response,techs)}
+#         colors = {**colors, **{'_'+k:v for k,v in colors.items()}}
+#         load_dict = {'en': 'Load', 'de': 'Last', 'fr': 'Charge', 'it': 'Carico'}
         
     print(url)
 
     prod_df = pd.DataFrame(data=prod,
                       index=techs,
                       columns=ticks).T
+    
+    col_exclude = ['Residual load', 'Renewable Share']
+    
+    for col in col_exclude:
+        if col in prod_df.columns:
+            prod_df.drop(col,axis=1,inplace=True)
     
     if rolling:
         prod_df = prod_df.rolling(rolling).sum()
